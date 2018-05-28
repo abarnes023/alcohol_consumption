@@ -14,15 +14,22 @@ The dataset below was downloaded from Gapminder. It includes the recorded and/or
 ```{r}
 alc <- read.csv('alcohol consumption.csv')
 
+head(alc)
+```
+```{r}
 # adjust columns and remove N/A values from alcohol column
 alc_df <- gather(alc, "year", "alcohol", -1) %>% subset(!is.na(alcohol))
 
 # change country column name
 colnames(alc_df)[1] <- 'country'
 
-# remove 'X' from years column
+# remove 'X' from years column and convert to numeric
 alc_df$year <- substring(alc_df$year, 2, 5)
+alc_df <- transform(alc_df, year = as.numeric(year))
+
+head(alc_df)
 ```
+
 
 ### Data Exploration
 
@@ -42,60 +49,67 @@ qplot(x = 1, y = alcohol, data = alc_df, geom = 'boxplot')
 A boxplot of all of the alcohol consumption data shows a median around 6.5-7 litres per adult, with the middle 50% of data falling between 3 litres and 10 litres. There are also a couple outliers greater than 22.5 litres per adult.
 
 ```{r}
-qplot(x = year, y = alcohol, data = alc_df, geom = 'boxplot')
+qplot(x = as.factor(year), y = alcohol, data = alc_df, geom = 'boxplot')
 ```
 
-The boxplots of alcohol consumption by year shows a large variation in alcohol consumption over the years. It also seems that some of the years may either have not much data points or data with very little variation.
+```{r}
+qplot(x = year, y = alcohol, data = alc_df)
+```
+
+
+The boxplot and scatterplot of alcohol consumption by year shows a large variation in alcohol consumption over the years. It is also clear that most of the data is for 2005 and 2008, as all the other years have less than 10 data points. This lack of data across the years may limit what types of information we can pull from this dataset.
 
 ```{r}
-table(alc_df$year)
+table_year <- table(alc_df$year)
 
 # create subset for years with at least 4 data values
-subset_alc <- alc_df %>% transform(year = as.numeric(year)) %>% subset(alc_df$year %in% c(1990, 1993, 1994, 1995, 2005, 2008))
+subset_alc <- alc_df[alc_df$year %in% names(table_year[table_year >= 4]), ]
 
 by(subset_alc$alcohol, subset_alc$year, summary)
 ```
 
-By help of a table of the data, we can see that many of the years only have 1-2 data points. With such little data we cannot be confident at all about the data for these years. To attempt to deal with this issue, we have subsetted the data and only included years with at least 4 data points.
+By help of a table of the data, we can see that many of the years only have 1-2 data points. With such little data we cannot be confident at all about the data for these years. To attempt to deal with this issue, we have subsetted the data and only included years with at least 4 data points. It's important to note that the subset data is still dominated by values from 2005 and 2008.
 
 ```{r}
 ggplot(aes(group = year, x = year, y = alcohol), data = subset_alc) +
   geom_boxplot()
 ```
 
-The boxplots for the years with at least 4 data points still shows a lot of variation. There isn't a simple trend that can be detected in this plot. Below we'll see if scatterplots can help make sense of the alcohol consumption by year.
+The boxplot for the years with at least 4 data points still shows a lot of variation. There isn't a simple trend that can be detected in this plot. Below we'll see if scatterplots can help make sense of the alcohol consumption by year.
 
 ```{r}
 ggplot(aes(x = year, y = alcohol), data = subset_alc) +
-  geom_point()
+  geom_jitter()
 ```
 
-It's clear here that most of our data is in the years 2005 and 2008, but the alcohol consumption for all of the year's seems to vary quite a bit.
+It's clear here that most of our data is in the years 2005 and 2008, but the alcohol consumption for all of the years seems to vary quite a bit.
 
 ```{r}
-alcByYear <- subset_alc %>% transform(year = as.numeric(year)) %>% group_by(year) %>%
+subset_alcByYear <- subset_alc %>% group_by(year) %>%
   summarise(alcohol_mean = mean(alcohol),
             alcohol_median = median(alcohol),
             n = n())
 
-ggplot(aes(x = year, y = alcohol_mean), data = alcByYear) +
+ggplot(aes(x = year, y = alcohol_mean), data = subset_alcByYear) +
   geom_point() +
   geom_smooth(method = 'lm', se = FALSE)
 ```
 
-Again, there is not a simple relationship that can be detected here. Likely, there are not enough data points and too much variation between countries to be able to see a relationship between alcohol and year. Below we'll try to investigate alcohol consumption over the years by individual countries.
+Again, there is not a simple relationship that can be detected here but the plot shows a downward trend. Likely, there are not enough data points and too much variation between countries to be able to see a relationship between alcohol and year. Below we'll try to investigate alcohol consumption over the years by individual countries.
 
 ```{r}
-alcByCountry <- alc_df %>% group_by(country) %>% arrange(year)
+alcByCountry <- alc_df %>% group_by(country) %>% arrange(country)
 
 count(alcByCountry) %>% subset(n > 10)
 ```
 
+## Exploration by Country
+
 Russia and Sweden are the only two countries that have more than 10 data points for alcohol consumption. We'll look at these countries' alcohol consumption over the years.
 
 ```{r}
-Rus_df <- subset(alc_df, country == 'Russia') %>% transform(year = as.numeric(year))
-Swe_df <- subset(alc_df, country == 'Sweden') %>% transform(year = as.numeric(year))
+Rus_df <- alc_df[alc_df$country == 'Russia', ]
+Swe_df <- alc_df[alc_df$country == 'Sweden', ]
 
 Rus <- ggplot(aes(x = year, y = alcohol), data = Rus_df) +
   geom_point()
@@ -117,6 +131,38 @@ cor.test(Swe_df$year, Swe_df$alcohol)
 ```
 
 The r values further demonstrate the positive correlation between alcohol consumption and year in both Sweden and Russia.
+
+
+Scatter plot of alcohol by year colored by country - 189 different countries so we will again subset to include only Sweden and Russia, with overall mean to compare
+```{r}
+alcByYear <- alc_df %>% group_by(year) %>%
+  summarise(alcohol = mean(alcohol),
+            alcohol_median = median(alcohol),
+            n = n())
+
+ggplot(aes(x = year, y = alcohol), data = alcByCountry) +
+  geom_point(aes(color = country),
+             data = subset(alcByCountry, country == 'Russia' | country == 'Sweden')) +
+  geom_line(data = alcByYear, linetype = 2, alpha = 0.2)
+```
+
+We can see here that the alcohol consumption in Russia is higher than that in Sweden, and we can also see the positive trends in alcohol consumption over the years in these two countries. The overall mean line also shows the limitations we have with this dataset. The line jumps up and down often due to the lack of data for some years. It appears that Russia and Sweden may be the only data points for many years, greatly affecting the overall mean and limiting its usefulness.
+
+
+As a further exploration, let us take a sample of 30 countries and see the trends in alcohol consumption that they show.
+```{r}
+# set seed
+set.seed(23)
+sample.ids <- sample(levels(alcByCountry$country), 30)
+
+ggplot(aes(x = year, y = alcohol),
+       data = subset(alcByCountry, country %in% sample.ids)) +
+  facet_wrap( ~ country) +
+  geom_line() +
+  geom_point()
+```
+
+Based on these results it looks very inconclusive as to how alcohol is changing over the years in each country. It seems to be different in each country in this sample, which could be true for the population, but again the lack of data makes our conclusions very indeterminate.
 
 ## Further Analysis
 
